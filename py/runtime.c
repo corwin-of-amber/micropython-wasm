@@ -1123,7 +1123,12 @@ void mp_load_method(mp_obj_t base, qstr attr, mp_obj_t *dest) {
 // Acts like mp_load_method_maybe but catches AttributeError, and all other exceptions if requested
 void mp_load_method_protected(mp_obj_t obj, qstr attr, mp_obj_t *dest, bool catch_all_exc) {
     nlr_buf_t nlr;
+#ifdef __wasi__
+    __control_setjmp(nlr_push_jmpbuf(&nlr), ^(int jval) {
+    if (jval == 0) {
+#else
     if (nlr_push(&nlr) == 0) {
+#endif
         mp_load_method_maybe(obj, attr, dest);
         nlr_pop();
     } else {
@@ -1134,6 +1139,9 @@ void mp_load_method_protected(mp_obj_t obj, qstr attr, mp_obj_t *dest, bool catc
             nlr_raise(MP_OBJ_FROM_PTR(nlr.ret_val));
         }
     }
+#ifdef __wasi__
+    });
+#endif
 }
 
 void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {

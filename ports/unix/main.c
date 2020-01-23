@@ -103,8 +103,15 @@ STATIC int handle_uncaught_exception(mp_obj_base_t *exc) {
 STATIC int execute_from_lexer(int source_kind, const void *source, mp_parse_input_kind_t input_kind, bool is_repl) {
     mp_hal_set_interrupt_char(CHAR_CTRL_C);
 
-    nlr_buf_t nlr;
+    __block nlr_buf_t nlr;
+
+#ifdef __wasi__
+    return __control_setjmp_with_return(nlr_push_jmpbuf(&nlr),
+                                        (__control_block_ret_t) ^(int jval) {
+    if (jval == 0) {
+#else
     if (nlr_push(&nlr) == 0) {
+#endif
         // create lexer based on source kind
         mp_lexer_t *lex;
         if (source_kind == LEX_SRC_STR) {
@@ -160,6 +167,9 @@ STATIC int execute_from_lexer(int source_kind, const void *source, mp_parse_inpu
         mp_hal_set_interrupt_char(-1);
         return handle_uncaught_exception(nlr.ret_val);
     }
+#ifdef __wasi__
+    });
+#endif
 }
 
 #if MICROPY_USE_READLINE == 1

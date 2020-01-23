@@ -196,7 +196,7 @@ static inline mp_map_elem_t *mp_map_cached_lookup(mp_map_t *map, qstr qst, uint8
 //  MP_VM_RETURN_NORMAL, sp valid, return value in *sp
 //  MP_VM_RETURN_YIELD, ip, sp valid, yielded value in *sp
 //  MP_VM_RETURN_EXCEPTION, exception in state[0]
-mp_vm_return_kind_t mp_execute_bytecode(mp_code_state_t *code_state, volatile mp_obj_t inject_exc) {
+mp_vm_return_kind_t mp_execute_bytecode(mp_code_state_t *code_state, volatile mp_obj_t inject_exc_p) {
 #define SELECTIVE_EXC_IP (0)
 #if SELECTIVE_EXC_IP
 #define MARK_EXC_IP_SELECTIVE() { code_state->ip = ip; } /* stores ip 1 byte past last opcode */
@@ -249,7 +249,9 @@ FRAME_SETUP();
     }
 
     // variables that are visible to the exception handler (declared volatile)
-    mp_exc_stack_t *volatile exc_sp = MP_CODE_STATE_EXC_SP_IDX_TO_PTR(exc_stack, code_state->exc_sp_idx); // stack grows up, exc_sp points to top of stack
+    __block mp_exc_stack_t *volatile exc_sp = MP_CODE_STATE_EXC_SP_IDX_TO_PTR(exc_stack, code_state->exc_sp_idx); // stack grows up, exc_sp points to top of stack
+
+    __block mp_obj_t inject_exc = inject_exc_p;
 
     #if MICROPY_PY_THREAD_GIL && MICROPY_PY_THREAD_GIL_VM_DIVISOR
     // This needs to be volatile and outside the VM loop so it persists across handling
@@ -259,9 +261,16 @@ FRAME_SETUP();
 
     // outer exception handling loop
     for (;;) {
-        nlr_buf_t nlr;
+        __block nlr_buf_t nlr;
+#ifdef __wasi__
+#define RETURN(X) __control_setjmp_return(nlr.jmpbuf, X)
+        __control_setjmp(nlr_push_jmpbuf(&nlr), ^(int jval) {
+        if (jval == 0) {
+#else
+#define RETURN(X) return X
 outer_dispatch_loop:
         if (nlr_push(&nlr) == 0) {
+#endif
             // local variables that are not visible to the exception handler
             const byte *ip = code_state->ip;
             mp_obj_t *sp = code_state->sp;
@@ -1186,7 +1195,7 @@ unwind_return:
                     }
                     #endif
                     FRAME_LEAVE();
-                    return MP_VM_RETURN_NORMAL;
+                    RETURN(MP_VM_RETURN_NORMAL);
 
                 ENTRY(MP_BC_RAISE_LAST): {
                     MARK_EXC_IP_SELECTIVE();
@@ -1225,7 +1234,7 @@ yield:
                     code_state->sp = sp;
                     code_state->exc_sp_idx = MP_CODE_STATE_EXC_SP_IDX_FROM_PTR(exc_stack, exc_sp);
                     FRAME_LEAVE();
-                    return MP_VM_RETURN_YIELD;
+                    RETURN(MP_VM_RETURN_YIELD);
 
                 ENTRY(MP_BC_YIELD_FROM): {
                     MARK_EXC_IP_SELECTIVE();
@@ -1351,7 +1360,7 @@ yield:
                     nlr_pop();
                     code_state->state[0] = obj;
                     FRAME_LEAVE();
-                    return MP_VM_RETURN_EXCEPTION;
+                    RETURN(MP_VM_RETURN_EXCEPTION);
                 }
 
 #if !MICROPY_OPT_COMPUTED_GOTO
@@ -1429,14 +1438,22 @@ exception_handler:
                         DECODE_ULABEL; // the jump offset if iteration finishes; for labels are always forward
                         code_state->ip = ip + ulab; // jump to after for-block
                         code_state->sp -= MP_OBJ_ITER_BUF_NSLOTS; // pop the exhausted iterator
+#ifdef __wasi__
+                        return;
+#else
                         goto outer_dispatch_loop; // continue with dispatch loop
+#endif
                     } else if (*code_state->ip == MP_BC_YIELD_FROM) {
                         // StopIteration inside yield from call means return a value of
                         // yield from, so inject exception's value as yield from's result
                         // (Instead of stack pop then push we just replace exhausted gen with value)
                         *code_state->sp = mp_obj_exception_get_value(MP_OBJ_FROM_PTR(nlr.ret_val));
                         code_state->ip++; // yield from is over, move to next instruction
+#ifdef __wasi__
+                        return;
+#else
                         goto outer_dispatch_loop; // continue with dispatch loop
+#endif
                     }
                 }
             }
@@ -1529,8 +1546,13 @@ unwind_loop:
                 // Note: ip and sp don't have usable values at this point
                 code_state->state[0] = MP_OBJ_FROM_PTR(nlr.ret_val); // put exception here because sp is invalid
                 FRAME_LEAVE();
-                return MP_VM_RETURN_EXCEPTION;
+                RETURN(MP_VM_RETURN_EXCEPTION);
             }
         }
+#ifdef __wasi__
+        });
+        __control_setjmp_post(nlr.jmpbuf, int);
+#endif
+#undef RETURN
     }
 }

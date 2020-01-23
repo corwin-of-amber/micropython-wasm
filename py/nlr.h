@@ -169,4 +169,10 @@ NORETURN void nlr_jump_fail(void *val);
 
 #endif
 
+#ifdef __wasi__
+#include <wasi/control.h>
+static inline struct __jmp_buf *nlr_push_jmpbuf(nlr_buf_t *nlr)
+    { nlr_push_tail(nlr); return nlr->jmpbuf; }
+#endif
+
 #endif // MICROPY_INCLUDED_PY_NLR_H
