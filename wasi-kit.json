@@ -1,0 +1,8 @@
+{
+    "micropython": {
+        "output": "micropython.wasm",
+        "args": [
+            "-Wl,-allow-undefined", "-Wl,-import-table", "-lwasi-emulated-mman"],
+        "noargs": ["re:^-[lL]", "re:^-Wl"]
+    }
+}

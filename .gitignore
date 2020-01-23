@@ -8,6 +8,8 @@
 *.hex
 *.dis
 *.exe
+*.wasm
+*.wat
 
 # Packages
 ############
