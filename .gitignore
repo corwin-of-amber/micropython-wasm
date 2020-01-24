@@ -45,3 +45,7 @@ user.props
 # Generated rst files
 ######################
 genrst/
+
+# WASI stuff
+#####################
+/wasi

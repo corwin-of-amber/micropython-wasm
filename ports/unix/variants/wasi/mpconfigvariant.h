@@ -25,14 +25,9 @@
  */
 
 // Options to control how MicroPython is built for this port,
-// overriding defaults in py/mpconfig.h.
 
-// Variant-specific definitions.
-#include "mpconfigvariant.h"
-
-// The minimal variant's config covers everything.
-// If we're building the minimal variant, ignore the rest of this file.
-#ifndef MICROPY_UNIX_MINIMAL
+// Prevent the rest of the default mpconfigport.h being used.
+#define MICROPY_UNIX_MINIMAL (1)
 
 #define MICROPY_ALLOC_PATH_MAX      (PATH_MAX)
 #define MICROPY_PERSISTENT_CODE_LOAD (1)
@@ -344,4 +339,3 @@ void mp_unix_mark_exec(void);
 #include <stdio.h>
 #endif
 
-#endif // MICROPY_UNIX_MINIMAL

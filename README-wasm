@@ -1,0 +1,2 @@
+cd build/unix
+wasi-kit make VARIANT=wasi
